@@ -49,6 +49,9 @@ object db {
         private fun addFilter(prop: KMutableProperty1<E, out Any>, operator: String, value: Any) =
             filters.add(Filter(prop, operator, value))
 
+        private val projectFields: ArrayList<KMutableProperty1<E, Any>> = ArrayList()
+        fun project(vararg fields: KMutableProperty1<E, Any>) = projectFields.addAll(fields.toMutableList())
+
         fun <V : Any> KMutableProperty1<E, V>.eq(id: V) = addFilter(this, "==", id)
         fun <V : Any> KMutableProperty1<E, V>.lessThanOrEqual(value: V) = addFilter(this, "<=", value)
         fun <V : Any> KMutableProperty1<E, V>.lessThan(value: V) = addFilter(this, "<", value)
@@ -80,6 +83,11 @@ object db {
 
         fun toObjectifyQuery(): LoadType<E> {
             val loadType = ofy().load().type(type.java)
+
+            if (0 < projectFields.size) {
+                loadType.project(*(projectFields.map { it.name }.toTypedArray()))
+            }
+
             filters.forEach {
                 if (isKeyProperty(it.prop)) {
                     loadType.filterKey(it.operator, it.value)
