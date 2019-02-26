@@ -1,13 +1,15 @@
 import com.googlecode.objectify.Key
 import com.googlecode.objectify.LoadResult
+import com.googlecode.objectify.Objectify
 import com.googlecode.objectify.ObjectifyService
 import com.googlecode.objectify.cmd.LoadType
 import com.googlecode.objectify.impl.EntityMetadata
 import kotlin.reflect.KClass
 import kotlin.reflect.KMutableProperty1
 
-object db {
-    fun ofy() = ObjectifyService.ofy()
+open class DB() {
+
+    open fun ofy() = ObjectifyService.ofy()
 
     fun <E : Any> getById(type: KClass<E>, id: Long) = ofy().load().type(type.java).id(id)
     fun <E : Any> getByIds(type: KClass<E>, vararg ids: Long) =
@@ -29,12 +31,12 @@ object db {
     fun deleteNow(vararg entities: Any) = delete(*entities).now()
 
     fun <E : Any> query(type: KClass<E>, where: (Query<E>.() -> Unit) = {}): Query<E> {
-        val q = db.Query<E>(type)
+        val q = Query<E>(type)
         where(q)
         return q
     }
 
-    class Query<E : Any>(private val type: KClass<E>) {
+    inner class Query<E : Any>(private val type: KClass<E>) {
         /**
          * Entity Metadata
          */
@@ -43,11 +45,12 @@ object db {
         /**
          * Filters
          */
-        class Filter<E>(val prop: KMutableProperty1<E, out Any>, val operator: String, val value: Any)
+        inner class Filter<E>(val prop: KMutableProperty1<E, out Any>, val operator: String, val value: Any)
 
         private val filters: MutableList<Filter<E>> = ArrayList()
-        private fun addFilter(prop: KMutableProperty1<E, out Any>, operator: String, value: Any) =
+        private fun addFilter(prop: KMutableProperty1<E, out Any>, operator: String, value: Any): Unit {
             filters.add(Filter(prop, operator, value))
+        }
 
         private val projectFields: ArrayList<KMutableProperty1<E, Any>> = ArrayList()
         fun project(vararg fields: KMutableProperty1<E, Any>) = projectFields.addAll(fields.toMutableList())
@@ -61,7 +64,7 @@ object db {
         /**
          * Sort
          */
-        class Sort<E>(val prop: KMutableProperty1<E, out Any>, val desc: Boolean)
+        inner class Sort<E>(val prop: KMutableProperty1<E, out Any>, val desc: Boolean)
 
         private var sort: Sort<E>? = null
         fun <V : Any> KMutableProperty1<E, V>.asc(): Sort<E> = Sort(this, false)
@@ -79,7 +82,7 @@ object db {
          */
         private var limit: Int = -1
 
-        fun limit(limit: Int) = { this@Query.limit = limit; this }
+        fun limit(limit: Int) = { this.limit = limit; this }
 
         fun toObjectifyQuery(): LoadType<E> {
             val loadType = ofy().load().type(type.java)
@@ -110,10 +113,35 @@ object db {
                 }
 
             }
+
+            if (0 < this.limit) {
+                loadType.limit(limit)
+            }
+
             return loadType
         }
 
-        fun list(): List<E> = toObjectifyQuery().list()
-        fun keyList(): List<Key<E>> = toObjectifyQuery().keys().list()
+        fun asList(): List<E> = toObjectifyQuery().list()
+        fun asKeyList(): List<Key<E>> = toObjectifyQuery().keys().list()
+    }
+}
+
+object db : DB() {
+    private object cached : DB() {
+        override fun ofy(): Objectify {
+            return super.ofy().cache(true)
+        }
+    }
+    fun cache(cache: Boolean=true): DB = if (cache) cached else this
+}
+
+class Person {
+    var firstName: String = "";
+}
+
+fun main() {
+    db.query(Person::class) {
+        Person::firstName.eq("test")
+        orderBy(Person::firstName.desc())
     }
 }
